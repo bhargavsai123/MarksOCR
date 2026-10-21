@@ -139,6 +139,12 @@ Set `RESET_CHECKPOINT = True` once only if you intentionally want to discard old
 
 Use a GPU runtime when available. The pipeline checks whether PaddlePaddle is CUDA-enabled and falls back to CPU otherwise.
 
+## Performance
+
+Expression fallback is the most expensive part of a sheet. It now caches results per cell, recognizes operand crops in batches, tries the strongest plus-shaped crosses first, and limits the low-score Part A server retry to the first pass. The reverse pass is used for conflict detection rather than repeating the full expression search.
+
+On the local CPU-only validation machine, `840030_533056.bmp` dropped from about 24 s with the old sequential expression path to about 13 s; the v19 baseline on the same machine was about 10 s. Production runs with a CUDA-enabled PaddlePaddle runtime are faster.
+
 ## Validation snapshot
 
 - Check-folder statuses: 3 OK / 2 REVIEW.

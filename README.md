@@ -17,12 +17,13 @@ The repository contains the Colab notebook and this README only.
 - Reads the printed Total Marks and Answer Book SI bubbles.
 - Validates question totals, Part A/Part B totals, handwritten totals, and the bubbled grand total.
 - Counts only the higher-total question when both alternatives in a Part B pair are attempted.
+- Recognizes single 10-mark Part B questions where the student writes one mark and leaves the other `(a)`/`(b)` row blank or dashed.
 - Distinguishes genuinely blank cells from non-blank but unreadable handwriting.
 - Keeps uncertain or contradictory sheets in a `REVIEW` status instead of forcing a valid result.
 
 ## Math and fraction support
 
-Pipeline version: `dynamic-grid-v22-math-fractions`
+Pipeline version: `dynamic-grid-v23-single10`
 
 The parser supports:
 
@@ -39,6 +40,7 @@ Rules:
 - A slash is parsed as a fraction and is never treated as a plus sign.
 - A contradictory or out-of-range equation is not silently repaired from the left-hand side.
 - Connected cursive half-marks use a narrow, low-confidence shape fallback only in Part A. The handwritten totals and bubbled Total Marks still decide whether the sheet passes.
+- Some Part B questions are single 10-mark questions rather than `(a)` + `(b)` pairs. A mark of `6`–`10` in one row is accepted only when the other row is blank/dashed and the written row total agrees. It is stored as a total-only question, not as an out-of-range `(a)` or `(b)` mark.
 
 ## Input folder structure
 
@@ -110,7 +112,7 @@ BUILD_FINAL_COMBINED_WORKBOOK = False
 Completed sheets are appended to:
 
 ```text
-OCR_Results/ocr_checkpoint_pilotfix_v22_math.jsonl
+OCR_Results/ocr_checkpoint_pilotfix_v23_single10.jsonl
 ```
 
 If Colab disconnects, rerun the full-batch cell. Completed sheets load from the checkpoint, and missing folder reports are rebuilt without re-running OCR.
@@ -144,10 +146,12 @@ Use a GPU runtime when available. The pipeline checks whether PaddlePaddle is CU
 - `840030_533056.bmp` reads the handwritten `3+2` expression in Q8 and validates OK.
 - The supplied connected Q5 half-mark shape is read as `0.5`; the sheet remains REVIEW because its computed total does not match the bubble.
 - Normal digit cells were checked to ensure the half-mark fallback does not turn them into false fractions.
+- Synthetic checks confirm that a single Part B mark of `7` or `10` is stored as a total-only question and validates without a/b unreadable flags.
 
 ## Known limits
 
 - Handwriting recognition is not guaranteed. Validation and human review remain required.
 - Shape-level half-mark recognition is a weak fallback, not a general classifier.
+- Single 10-mark detection requires the other row to be blank/dashed and the row total to agree; ambiguous rows remain in REVIEW.
 - Totals and bubbles can disagree because of handwriting, scanning, or bubble-grid quality; those sheets stay in REVIEW.
 - A full production run should be done in chunks and monitored, with the checkpoint kept on Google Drive.

@@ -60,6 +60,10 @@ the pipeline output. The changes in v24 come from that audit:
 - **No invented Part A marks.** An unreadable Part A cell is no longer filled in from a
   handwritten `Total(A)` unless the written totals agree with the bubbled total and the
   solution is unique. A misread `Total(A)` used to invent two zero marks.
+- **No invented marks at all.** If the bubble total can only be reached by giving a
+  cell a value that no recogniser read, that value is not stored and the sheet is
+  flagged `REVIEW` with the question named. About half of the invented marks turned out
+  to be wrong, so they must not be published as if they had been read.
 - **Contradictions fail the sheet.** When the written `Total(A)` and the written
   `Total(B)` both disagree with the computed marks, or when a confidently read row
   total contradicts the marks of that row while the written totals also disagree, the
@@ -67,15 +71,19 @@ the pipeline output. The changes in v24 come from that audit:
 - **The joint solver stops chasing a misread total.** The handwritten totals are only
   used as a tie-breaker when they agree with each other and with the bubble.
 
-Audit result on the 130 sheets that were hand-audited mark by mark:
+Audit result on the 168 sheets that were hand-audited mark by mark:
 
 | metric | v23 baseline | v24 |
 | --- | --- | --- |
-| wrong mark cells | 227 | 196 |
-| sheets with at least one wrong mark | 71 | 67 |
-| sheet status agreement | 73.1% (95/130) | 76.9% (100/130) |
-| false `OK` (contradictory sheet reported valid) | 17 | 12 |
-| false `REVIEW` | 18 | 18 |
+| wrong mark cells | 296 of 4184 (7.1%) | 263 of 4184 (6.3%) |
+| sheets with at least one wrong mark | 92 | 87 |
+| false `OK` (sheet contradicts itself but is reported valid) | 17 | 6 |
+| false `REVIEW` (sheet is consistent but is sent to review) | 22 | 34 |
+| sheet status agreement | 76.8% (129/168) | 76.2% (128/168) |
+
+The status agreement is flat on purpose: the stricter rules send 12 more audited sheets
+to `REVIEW`, and that is the intended trade-off. Nothing is invented any more, and a
+sheet that contradicts itself can no longer be reported as valid.
 
 Runtime on the local CPU-only machine went from 9.6 s to 10.4 s per sheet because of the
 extra server-model reads; the server model is only asked when the mobile read is weak.
@@ -185,13 +193,18 @@ On the local CPU-only validation machine, `840030_533056.bmp` dropped from about
 
 ## Validation snapshot
 
-- Local audit of 604 sheets: 401 `OK` / 203 `REVIEW` with v24 (423 / 181 with the v23
-  baseline). The change is deliberate: sheets whose written totals contradict the marks
-  are now reported as `REVIEW` instead of being forced to a valid total.
-- 130 sheets were hand-audited mark by mark; see the v24 section above for the
+- Local audit of 604 sheets: 333 `OK` / 271 `REVIEW` with v24 (423 / 181 with the v23
+  baseline). The change is deliberate: sheets whose written totals contradict the marks,
+  and sheets where a mark would have to be invented, are now reported as `REVIEW`
+  instead of being forced to a valid total.
+- 168 sheets were hand-audited mark by mark; see the v24 section above for the
   before/after numbers.
-- Check-folder statuses: 3 OK / 2 REVIEW.
-- Ten-sheet ground-truth smoke run: 9/10 valid.
+- Check-folder statuses: 2 OK / 3 REVIEW with v24 (3 OK / 2 REVIEW with the v23
+  baseline). The extra `REVIEW` is `840030_531595.bmp`, where the bubble total could
+  only be reached by inventing several Part A and Part B marks.
+- Ten-sheet ground-truth smoke run: 169/176 mark cells (96.0%) with two sheets sent to
+  `REVIEW` because a mark would have had to be invented (baseline: 170/176 and one
+  sheet in `REVIEW`).
 - `840030_533056.bmp` reads the handwritten `3+2` expression in Q8 and validates OK.
 - The supplied connected Q5 half-mark shape is read as `0.5`; the sheet remains REVIEW because its computed total does not match the bubble.
 - Normal digit cells were checked to ensure the half-mark fallback does not turn them into false fractions.

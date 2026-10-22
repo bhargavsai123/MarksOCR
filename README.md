@@ -23,7 +23,7 @@ The repository contains the Colab notebook and this README only.
 
 ## Math and fraction support
 
-Pipeline version: `dynamic-grid-v23-single10`
+Pipeline version: `dynamic-grid-v24-audit`
 
 The parser supports:
 
@@ -41,6 +41,44 @@ Rules:
 - A contradictory or out-of-range equation is not silently repaired from the left-hand side.
 - Connected cursive half-marks use a narrow, low-confidence shape fallback only in Part A. The handwritten totals and bubbled Total Marks still decide whether the sheet passes.
 - Some Part B questions are single 10-mark questions rather than `(a)` + `(b)` pairs. A mark of `6`–`10` in one row is accepted only when the other row is blank/dashed and the written row total agrees. It is stored as a total-only question, not as an out-of-range `(a)` or `(b)` mark.
+
+## Audit-driven accuracy update (v24)
+
+Every cell of the 604 locally available sheets was re-read by hand and compared with
+the pipeline output. The changes in v24 come from that audit:
+
+- **Part B digits get a second opinion.** When the mobile recogniser returns a single
+  weak Part B digit (score below 0.9) the server model reads the same crops as well.
+  This removed about 14% of the wrong Part B digits and left the strong reads alone.
+- **A dash is a dash.** A cell that holds a clear horizontal dash plus a tiny,
+  low-confidence mark is scored `0` instead of `1`. A dash next to a real digit is still
+  never collapsed to `0`.
+- **Handwritten totals are read as one number.** `Total(A)`, `Total(B)` and
+  `TOTAL(A+B)` are additionally read from a white-canvas union of their handwriting
+  components (mobile and server), so a `17` or `52` split over two strokes is no longer
+  read as `1`, and the printed `TOTAL(A+B)` label is no longer read as the value.
+- **No invented Part A marks.** An unreadable Part A cell is no longer filled in from a
+  handwritten `Total(A)` unless the written totals agree with the bubbled total and the
+  solution is unique. A misread `Total(A)` used to invent two zero marks.
+- **Contradictions fail the sheet.** When the written `Total(A)` and the written
+  `Total(B)` both disagree with the computed marks, or when a confidently read row
+  total contradicts the marks of that row while the written totals also disagree, the
+  sheet is flagged `REVIEW` instead of being reported as valid.
+- **The joint solver stops chasing a misread total.** The handwritten totals are only
+  used as a tie-breaker when they agree with each other and with the bubble.
+
+Audit result on the 130 sheets that were hand-audited mark by mark:
+
+| metric | v23 baseline | v24 |
+| --- | --- | --- |
+| wrong mark cells | 227 | 196 |
+| sheets with at least one wrong mark | 71 | 67 |
+| sheet status agreement | 73.1% (95/130) | 76.9% (100/130) |
+| false `OK` (contradictory sheet reported valid) | 17 | 12 |
+| false `REVIEW` | 18 | 18 |
+
+Runtime on the local CPU-only machine went from 9.6 s to 10.4 s per sheet because of the
+extra server-model reads; the server model is only asked when the mobile read is weak.
 
 ## Input folder structure
 
@@ -112,7 +150,7 @@ BUILD_FINAL_COMBINED_WORKBOOK = False
 Completed sheets are appended to:
 
 ```text
-OCR_Results/ocr_checkpoint_pilotfix_v23_single10.jsonl
+OCR_Results/ocr_checkpoint_pilotfix_v24_audit.jsonl
 ```
 
 If Colab disconnects, rerun the full-batch cell. Completed sheets load from the checkpoint, and missing folder reports are rebuilt without re-running OCR.
@@ -147,6 +185,11 @@ On the local CPU-only validation machine, `840030_533056.bmp` dropped from about
 
 ## Validation snapshot
 
+- Local audit of 604 sheets: 401 `OK` / 203 `REVIEW` with v24 (423 / 181 with the v23
+  baseline). The change is deliberate: sheets whose written totals contradict the marks
+  are now reported as `REVIEW` instead of being forced to a valid total.
+- 130 sheets were hand-audited mark by mark; see the v24 section above for the
+  before/after numbers.
 - Check-folder statuses: 3 OK / 2 REVIEW.
 - Ten-sheet ground-truth smoke run: 9/10 valid.
 - `840030_533056.bmp` reads the handwritten `3+2` expression in Q8 and validates OK.
@@ -157,6 +200,9 @@ On the local CPU-only validation machine, `840030_533056.bmp` dropped from about
 ## Known limits
 
 - Handwriting recognition is not guaranteed. Validation and human review remain required.
+- The handwritten `Total(A)`, `Total(B)` and `TOTAL(A+B)` cells are still the weakest
+  read on the sheet; a wrong total is reported as a warning or, when two totals
+  contradict the marks at once, as `REVIEW`.
 - Shape-level half-mark recognition is a weak fallback, not a general classifier.
 - Single 10-mark detection requires the other row to be blank/dashed and the row total to agree; ambiguous rows remain in REVIEW.
 - Totals and bubbles can disagree because of handwriting, scanning, or bubble-grid quality; those sheets stay in REVIEW.

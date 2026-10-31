@@ -2,12 +2,18 @@
 
 Google Colab pipeline for reading handwritten mark sheets, validating totals against the printed bubble grid, and exporting Excel reports folder by folder.
 
-The repository contains the Colab notebook and this README only.
+The repository contains the Colab notebooks, this README, and the local test helpers under `dev/`.
 
 ## Contents
 
-- `Mark Sheet OCR Pilot Fixes v6.ipynb` — the complete OCR pipeline and batch runner.
+- `Mark Sheet OCR v7 - glyph pipeline.ipynb` — the complete OCR pipeline and batch runner (glyph-first architecture).
+- `Mark Sheet OCR Pilot Fixes v6.ipynb` — the previous v25-audit pipeline (kept for reference).
 - `README.md` — setup, usage, output layout, and validation notes.
+- `dev/harness.py` — loads the shipped notebook cell for local tests.
+- `dev/test_glyph_frontend.py` — glyph/crop regression tests (run against the notebook).
+- `dev/test_bubble_grid.py` — regression tests for the ring-fitted OMR bubble grid (runs the shipped notebook cell).
+- `dev/run_sample.py` — diagnostics and crop contact sheets over `Random_Images_Sample/`.
+- `Random_Images_Sample/` — 186 local test images (jpg/bmp/tif).
 
 ## What the pipeline does
 
@@ -23,7 +29,7 @@ The repository contains the Colab notebook and this README only.
 
 ## Math and fraction support
 
-Pipeline version: `dynamic-grid-v24-audit`
+Pipeline version: `glyph-grid-v26`
 
 The parser supports:
 
@@ -88,6 +94,127 @@ sheet that contradicts itself can no longer be reported as valid.
 Runtime on the local CPU-only machine went from 9.6 s to 10.4 s per sheet because of the
 extra server-model reads; the server model is only asked when the mobile read is weak.
 
+## Glyph-first front-end (v26, pipeline `glyph-grid-v26`)
+
+The v25 pipeline erased a dilated band around every printed orange rule and then
+assigned ink to the nearest cell centre.  Handwriting does not stay inside the
+printed boxes: a digit written across a rule lost the pixels that crossed it, and
+a digit tall enough to reach the next row was split into one fragment per row.
+Each fragment was then cropped on its own, so the recogniser saw half a digit.
+
+The v26 front-end works the other way round:
+
+1. **Pen mask by colour and structure.**  A pixel is ink if it is darker than the
+   local paper, or dark in absolute terms, or a saturated non-orange colour.
+   Printed rules are removed by their *shape* (long straight orange runs), not by
+   erasing a band.  A blue stroke on top of an orange rule survives because the
+   blend is dark but not a long straight run.
+
+2. **Whole-glyph segmentation.**  Connected components are joined into whole
+   glyphs before anything is cropped.  Vertical join: two pieces of one digit
+   separated by a rule (or a pen lift) are joined when they overlap
+   horizontally and the gap is small, *unless* a detected row rule lies
+   between two comparably sized blobs.  Horizontal join: two strokes of one
+   digit (a 5, a 4, a 0 with a gap) are joined across a hairline gap.
+
+3. **Ink-overlap assignment.**  Every glyph is given to the cell that holds the
+   majority of its ink pixels.  A tall glyph keeps its `share` and `shares`
+   (the fraction of the glyph in every cell) so the caller can see that it
+   crossed a row without being cut.
+
+4. **Glyph crops, not cell crops.**  The rendered view is the bounding box of
+   the cell's glyphs plus margin, never the cell rectangle.  The crop contains
+   the entire glyph even when it spans two rows.
+
+5. **Shared-glyph ambiguity flag.**  When two digits in different rows touch
+   and are merged into one glyph, the glyph stays whole for the row that owns
+   it.  The other row gets a `part` crop of the ink it physically contains,
+   and is marked `ambiguous=True` so the validation layer reports `REVIEW`
+   instead of a clean blank.  A genuine tall digit's thin descender does *not*
+   flag the next row (width < 0.45×row-height in the minority cell).
+
+6. **Per-row fallback crop (`part` view).**  Every cell that owns a tall glyph
+   also gets a crop restricted to its own row (`part` view).  The recogniser
+   tries the whole-glyph crop first; if the reading is out of range (e.g. "43"
+   for a 0–15 mark), the `part` crop is tried and typically reads the intended
+   digit ("4").
+
+Key behavioural changes:
+
+| Scenario | v25 (band-erase) | v26 (glyph-first) |
+|---|---|---|
+| Digit written across a rule | Pixels on the rule lost; digit split | Entire stroke kept; whole glyph |
+| Large digit reaching next row | Cut at rule; two half-crops | One tall glyph, full crop |
+| Two digits in adjacent rows touch | One row empty, other gets both | Both rows get crops; second flagged `ambiguous` |
+| Faint ink inside rule band | Erased | Recovered (structural rule removal + band protect) |
+
+Validation logic (read_cell, arithmetic checks, Excel writer) is unchanged; it
+receives the new view keys `color`, `binary`, `context`, `part`, `part_box`,
+`per_glyph`, and legacy keys `box`, `large`, `overflow_x`, `overflow_y` for
+compatibility with `_read_split_sum` and `_read_component_total`.
+
+### Bubble grid (Total Marks) fit — v26
+
+The OMR panel is **not** a fixed fraction of the Part B rectangle.  The
+II-series forms use a taller, wider panel than the IV / I-Sem / BE forms, so the
+old `B`-relative grid (x at `1.051, 1.115, 1.207, 1.279 × B.w`, row pitch
+`0.21 × B.h`) sampled blank paper for the tens digit and the tens column for the
+units.  Every II sheet therefore came back with a single digit: `Total Marks 5`
+for a bubbled `50/51/52`, `4` for `46`, `0` for `14`.
+
+`detect_bubbles` now fits the grid to the **printed orange rings**:
+
+1. **Candidates.**  Connected orange components to the right of Part B, with a
+   roughly square bounding box (10–60 px, aspect 0.7–1.4) — printed bubble
+   rings and the printed header digits.
+2. **Columns.**  Cluster the candidate x-centres and keep the first four that
+   hold at least five rings.  A pen-filled bubble is still an orange ring
+   fragment, so it survives the count.
+3. **Rows.**  Accept a candidate y only when at least two of the other three
+   columns have a ring at the same height.  Rows whose rings are hidden under
+   pen are restored from the row pitch, and the edge rows are extended outward
+   only while some column still has a ring there.
+4. **Radius.**  The 75th-percentile ring half-width sets the fill disk
+   (`r × 0.62`), so the disk covers the bubble interior and not the rule.
+
+If the rings are too thin or fragmented — the JPEG BE sheets — `_ring_grid`
+returns `None` and `detect_bubbles` falls back to the previous nominal + Hough
+grid unchanged.  The IV layout still reads `38 / SI 13`; the BE JPEG still reads
+`37`; only the II sheets change, and they change from one digit to two.
+
+Verification across the 186 samples: all 36 `II__` sheets fit a full 4×10 grid,
+and 35 of them now read a two-digit total (`II__22MTC04__840060_1035026` 5→**52**,
+`II__22CSC03__840060_1041117` 5→**54**, `II__22EGC01__840060_1036013` 4→**45**,
+`II__22PHY07__840060_1041602` 5→**51**, `II__22CEC01__840060_1039278` 0→**14**).
+The one non-II change is a BE_B sheet whose second digit is now read from the
+ring grid; its grand total is unchanged.  `python3 dev/test_bubble_grid.py`
+(9 tests) execs the shipped notebook cell and asserts these cases.
+
+### No-ground-truth workflow
+
+Because the full 49 GB dataset has no ground-truth marks, the pipeline is
+validated by diagnostics rather than an accuracy score:
+
+1. **Run the sample diagnostics script** (`dev/run_sample.py`) on
+   `Random_Images_Sample/`.  It produces:
+   - `/tmp/glyph_diagnostics.csv` — one row per cell with glyph geometry,
+     ambiguity flags, overflow metrics.
+   - `/tmp/glyph_crops/contact_*.png` — visual contact sheets of every crop.
+2. **Check the ambiguity rate.**  ~5 % of cells are `ambiguous` (touching
+   digits).  If this spikes on a new batch, the glyph joiner may be too
+   aggressive.
+3. **Check the "large" cell count.**  ~9 % of ink cells have `large=True`
+   (glyph taller than 1.25×row).  These are the cases the old pipeline cut.
+4. **Verify crops visually.**  Open the contact sheets: every crop should show
+   a complete digit, never a half-digit clipped at a rule.
+5. **Run the pilot (5 sheets) in Colab** and inspect the per-view diagnostics
+   printed by the pilot cell.  The `REVIEW` rate should be stable.
+6. **Full batch.**  The notebook writes per-folder Excel reports; `Review
+   Needed` worksheets list sheets with ambiguous cells or contradictory totals.
+
+The front-end is testable in isolation (`python3 dev/test_glyph_frontend.py`,
+13 tests) and does not require PaddleOCR or Colab.
+
 ## Input folder structure
 
 The notebook expects a parent folder containing the six top-level folders:
@@ -111,8 +238,8 @@ Supported extensions: `.jpg`, `.jpeg`, `.png`, `.bmp`, `.webp`, `.tif`, `.tiff`.
 Set the input and output roots in the notebook:
 
 ```python
-DRIVE_FOLDER = Path('/content/drive/MyDrive/data2')
-OUTPUT_DIR = Path('/content/drive/MyDrive/data2/OCR_Results')
+DRIVE_FOLDER = Path('/content/drive/MyDrive/data2_glyph')
+OUTPUT_DIR = Path('/content/drive/MyDrive/data2_glyph/OCR_Results')
 ```
 
 `DRIVE_FOLDER` must be the parent of the six folders, not one of the six folders itself.
@@ -158,7 +285,7 @@ BUILD_FINAL_COMBINED_WORKBOOK = False
 Completed sheets are appended to:
 
 ```text
-OCR_Results/ocr_checkpoint_pilotfix_v24_audit.jsonl
+OCR_Results/ocr_checkpoint_glyph_grid_v26.jsonl
 ```
 
 If Colab disconnects, rerun the full-batch cell. Completed sheets load from the checkpoint, and missing folder reports are rebuilt without re-running OCR.

@@ -6,14 +6,15 @@ The repository contains the Colab notebooks, this README, and the local test hel
 
 ## Contents
 
-- `Mark Sheet OCR v7 - glyph pipeline.ipynb` — the complete OCR pipeline and batch runner (glyph-first architecture).
-- `Mark Sheet OCR Pilot Fixes v6.ipynb` — the previous v25-audit pipeline (kept for reference).
+- `bruh.ipynb` — the Colab pipeline and batch runner (source of truth for the pipeline).
+- `bruh_local.ipynb` — local (non-Colab) copy generated from `bruh.ipynb`.
+- `requirements-local.txt` / `setup_local.sh` — local Python 3.12 environment.
+- `dev/make_local_notebook.py` — regenerates `bruh_local.ipynb` from `bruh.ipynb`.
+- `dev/test_local_notebook.py`, `dev/test_local_setup.py` — local regression tests.
 - `README.md` — setup, usage, output layout, and validation notes.
-- `dev/harness.py` — loads the shipped notebook cell for local tests.
-- `dev/test_glyph_frontend.py` — glyph/crop regression tests (run against the notebook).
-- `dev/test_bubble_grid.py` — regression tests for the ring-fitted OMR bubble grid (runs the shipped notebook cell).
-- `dev/run_sample.py` — diagnostics and crop contact sheets over `Random_Images_Sample/`.
 - `Random_Images_Sample/` — 186 local test images (jpg/bmp/tif).
+
+The v6/v7 notebooks and the old `dev/` helpers remain in git history.
 
 ## What the pipeline does
 
@@ -298,6 +299,60 @@ FORCE_REBUILD_FOLDER_REPORTS = False
 ```
 
 Set `RESET_CHECKPOINT = True` once only if you intentionally want to discard old checkpoint records and rerun every sheet.
+
+## Run locally (macOS / Linux, CPU)
+
+`bruh_local.ipynb` is the local version of `bruh.ipynb`: same pipeline, no
+Google Drive, local input and output folders.
+
+### Setup
+
+```bash
+./setup_local.sh
+```
+
+This creates `./.venv312` with Python 3.12 (PaddlePaddle 3.2.0 has no Python
+3.14 wheel), installs `requirements-local.txt`, and registers the
+`MarksOCR (local)` Jupyter kernel.
+
+### Run
+
+1. Open `bruh_local.ipynb` in JupyterLab/Notebook or VS Code.
+2. Select the `MarksOCR (local)` kernel (VS Code: `.venv312/bin/python`).
+3. Run the cells in order.
+
+Input defaults to `./Random_Images_Sample`; Excel reports and the checkpoint
+go to `./OCR_Results`. Override either folder:
+
+```bash
+MARKSOCR_INPUT=/path/to/sheets MARKSOCR_OUTPUT=/path/to/results \
+  jupyter lab bruh_local.ipynb
+```
+
+Launch Jupyter from the repository root so the default paths resolve.
+
+### What changes from the Colab notebook
+
+- The pip-install cell becomes an environment check (no runtime installs).
+- `google.colab.drive` is gone; `INPUT_DIR` / `OUTPUT_DIR` are local paths.
+- The smoke-test font lookup works on macOS and Linux.
+- Pipeline cells (2, 2b, 3) are unchanged; `dev/test_local_notebook.py`
+  asserts that.
+
+### Expected speed and models
+
+CPU-only on Apple Silicon is roughly 10 s per sheet. The PP-OCRv5 mobile and
+server models are cached in `~/.paddlex/official_models`; if missing,
+PaddleOCR downloads them once on first use.
+
+### Troubleshooting
+
+- `No module named paddle` or a Python 3.14 error: the notebook is using the
+  base kernel. Select `MarksOCR (local)` or `.venv312/bin/python`.
+- `libomp` / `libmkl` import error: `brew install libomp`, then rerun
+  `./setup_local.sh`.
+- To rebuild the local notebook after editing `bruh.ipynb`:
+  `python3 dev/make_local_notebook.py`.
 
 ## How to run
 

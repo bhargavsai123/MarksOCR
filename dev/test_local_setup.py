@@ -25,6 +25,12 @@ class LocalSetupTest(unittest.TestCase):
             self.assertIn(needle, text)
         subprocess.run(["bash", "-n", str(SETUP)], check=True)
 
+    def test_readme_documents_local_run(self):
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        for needle in ("Run locally", "setup_local.sh", "MARKSOCR_INPUT",
+                       "bruh_local.ipynb"):
+            self.assertIn(needle, text)
+
 
 if __name__ == "__main__":
     unittest.main()

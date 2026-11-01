@@ -236,7 +236,7 @@ Main/
 
 Supported extensions: `.jpg`, `.jpeg`, `.png`, `.bmp`, `.webp`, `.tif`, `.tiff`.
 
-Set the input and output roots in the notebook:
+In Colab, set the input and output roots in the notebook:
 
 ```python
 DRIVE_FOLDER = Path('/content/drive/MyDrive/data2_glyph')
@@ -244,6 +244,8 @@ OUTPUT_DIR = Path('/content/drive/MyDrive/data2_glyph/OCR_Results')
 ```
 
 `DRIVE_FOLDER` must be the parent of the six folders, not one of the six folders itself.
+The local notebook scans `./Random_Images_Sample` (or `MARKSOCR_INPUT`) recursively,
+so the same nested layout is optional there.
 
 ## Per-inner-folder Excel reports
 
@@ -286,10 +288,10 @@ BUILD_FINAL_COMBINED_WORKBOOK = False
 Completed sheets are appended to:
 
 ```text
-OCR_Results/ocr_checkpoint_glyph_grid_v26.jsonl
+OCR_Results/ocr_checkpoint_pilotfix_v25_audit.jsonl
 ```
 
-If Colab disconnects, rerun the full-batch cell. Completed sheets load from the checkpoint, and missing folder reports are rebuilt without re-running OCR.
+If the run is interrupted, rerun the full-batch cell. Completed sheets load from the checkpoint, and missing folder reports are rebuilt without re-running OCR.
 
 Useful switches:
 
@@ -321,6 +323,10 @@ This creates `./.venv312` with Python 3.12 (PaddlePaddle 3.2.0 has no Python
 2. Select the `MarksOCR (local)` kernel (VS Code: `.venv312/bin/python`).
 3. Run the cells in order.
 
+The venv provides the kernel, not a Jupyter frontend. Use any JupyterLab or
+Notebook install (the registered kernel is available system-wide), or run
+`./.venv312/bin/pip install jupyterlab` if you do not have one.
+
 Input defaults to `./Random_Images_Sample`; Excel reports and the checkpoint
 go to `./OCR_Results`. Override either folder:
 
@@ -336,7 +342,7 @@ Launch Jupyter from the repository root so the default paths resolve.
 - The pip-install cell becomes an environment check (no runtime installs).
 - `google.colab.drive` is gone; `INPUT_DIR` / `OUTPUT_DIR` are local paths.
 - The smoke-test font lookup works on macOS and Linux.
-- Pipeline cells (2, 2b, 3) are unchanged; `dev/test_local_notebook.py`
+- Pipeline cells (2 and 2b) are unchanged; `dev/test_local_notebook.py`
   asserts that.
 
 ### Expected speed and models
@@ -354,9 +360,11 @@ PaddleOCR downloads them once on first use.
 - To rebuild the local notebook after editing `bruh.ipynb`:
   `python3 dev/make_local_notebook.py`.
 
-## How to run
+## How to run in Google Colab
 
-1. Open the notebook in Google Colab.
+For the local workflow, see "Run locally" above.
+
+1. Open `bruh.ipynb` in Google Colab.
 2. Run the dependency installation cell.
 3. Mount Google Drive and set `DRIVE_FOLDER` / `OUTPUT_DIR`.
 4. Run the alignment inspection cell on a sample sheet.

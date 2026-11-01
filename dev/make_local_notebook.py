@@ -21,7 +21,7 @@ import sys
 if not ((3, 10) <= sys.version_info[:2] < (3, 14)):
     raise RuntimeError(
         "Python %d.%d is not supported by PaddlePaddle 3.2.0. "
-        "Use the project venv: source .venv312/bin/activate"
+        "Run ./setup_local.sh, then select the 'MarksOCR (local)' Jupyter kernel."
         % sys.version_info[:2]
     )
 

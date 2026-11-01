@@ -1,0 +1,8 @@
+# Local (macOS arm64 / Linux) environment for bruh_local.ipynb.
+# Python 3.12 is required: PaddlePaddle 3.2.0 has no Python 3.14 wheel.
+numpy==1.26.4
+paddlepaddle==3.2.0
+paddleocr==3.2.0
+openpyxl>=3.1,<4
+matplotlib>=3.8,<4
+ipykernel>=6.29,<8
